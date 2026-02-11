@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f3f6fb"/>
+      <stop offset="100%" stop-color="#e8eef8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <rect x="70" y="90" width="1460" height="720" rx="18" fill="#ffffff" stroke="#cbd5e1" stroke-width="3"/>
+  <text x="120" y="180" font-family="Arial, sans-serif" font-size="56" font-weight="700" fill="#0f172a">All Tests View Preview</text>
+  <text x="120" y="250" font-family="Arial, sans-serif" font-size="34" fill="#475569">Replace this file with your real report screenshot:</text>
+  <text x="120" y="305" font-family="Arial, sans-serif" font-size="30" fill="#1d4ed8">docs/images/all-tests-view.svg</text>
+</svg>

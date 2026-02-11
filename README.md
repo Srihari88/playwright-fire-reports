@@ -4,24 +4,6 @@ HTML reports for Playwright test results with charts, themes, test steps, and fa
 
 ---
 
-## Report Preview
-
-Add your screenshots under `docs/images/` using the filenames below.
-
-### Dashboard header
-![Dashboard Header](docs/images/dashboard-header.png)
-
-### Browser and suite analytics
-![Browser and Suite Analytics](docs/images/browser-suite-analytics.png)
-
-### All tests view with filters
-![All Tests View](docs/images/all-tests-view.png)
-
-### Performance insights
-![Performance Insights](docs/images/performance-insights.png)
-
----
-
 ## How to generate a report
 
 Follow these three steps every time you want a report.
@@ -118,3 +100,21 @@ await createReport('test-results.json', 'report.html', {
 | 3. Run tests | `npx playwright test` |
 | 4. Generate report | `npx fire-report --input test-results.json --output report.html` |
 | 5. Open report | `open report.html` |
+
+---
+
+## Report Preview
+
+These preview images are stored in `docs/images/`. Replace them with your latest screenshots any time.
+
+### Dashboard header
+![Dashboard Header](docs/images/dashboard-header.svg)
+
+### Browser and suite analytics
+![Browser and Suite Analytics](docs/images/browser-suite-analytics.svg)
+
+### All tests view with filters
+![All Tests View](docs/images/all-tests-view.svg)
+
+### Performance insights
+![Performance Insights](docs/images/performance-insights.svg)
