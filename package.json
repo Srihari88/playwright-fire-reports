@@ -1,0 +1,62 @@
+{
+  "name": "playwright-fire-reports",
+  "version": "1.0.8",
+  "description": "Playwright Fire Reports - Stunning HTML report generator for Playwright test results with beautiful charts, multiple themes, and advanced analytics",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/cli.js",
+    "generate-report": "node dist/cli.js",
+    "dev": "tsc --watch",
+    "example": "node dist/cli.js --input ./sample-report.json --output ./reports/report.html --theme dark",
+    "quickstart": "node quickstart.js"
+  },
+  "keywords": [
+    "playwright",
+    "test-report",
+    "html-report",
+    "charts",
+    "visualization",
+    "automation",
+    "testing",
+    "fire-reports",
+    "beautiful-reports",
+    "test-analytics"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/playwright-fire-reports.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/playwright-fire-reports/issues"
+  },
+  "homepage": "https://github.com/yourusername/playwright-fire-reports#readme",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "fire-report": "dist/cli.js"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "fs-extra": "^11.2.0",
+    "handlebars": "^4.7.7",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^20.10.6",
+    "@types/yargs": "^17.0.35",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
