@@ -37,13 +37,13 @@ const argv = yargs(hideBin(process.argv))
     alias: 't',
     describe: 'Report title',
     type: 'string',
-    default: 'Playwright Test Report'
+    default: 'Playwright Fire Reports'
   })
   .option('theme', {
     describe: 'Theme: dark, light, professional, neon, ocean',
     type: 'string',
     choices: ['dark', 'light', 'professional', 'neon', 'ocean'],
-    default: 'dark'
+    default: 'professional'
   })
   .option('branch', {
     describe: 'Git branch name (shown in report metadata)',

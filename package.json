@@ -1,6 +1,6 @@
 {
   "name": "playwright-fire-reports",
-  "version": "1.0.8",
+  "version": "1.0.10",
   "description": "Playwright Fire Reports - Stunning HTML report generator for Playwright test results with beautiful charts, multiple themes, and advanced analytics",
   "type": "module",
   "main": "dist/index.js",
@@ -30,12 +30,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yourusername/playwright-fire-reports.git"
+    "url": "git+https://github.com/Srihari88/playwright-fire-reports.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/playwright-fire-reports/issues"
+    "url": "https://github.com/Srihari88/playwright-fire-reports/issues"
   },
-  "homepage": "https://github.com/yourusername/playwright-fire-reports#readme",
+  "homepage": "https://github.com/Srihari88/playwright-fire-reports#readme",
   "files": [
     "dist",
     "README.md",

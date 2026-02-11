@@ -1,6 +1,6 @@
 /**
  * Vue.js Report Generator – World-class Playwright test reports
- * Single-file HTML with Vue 3 + ApexCharts, Tailwind CSS
+ * Single-file HTML with Vue 3 + ECharts, Tailwind CSS
  */
 import fs from 'fs-extra';
 import * as path from 'path';
@@ -52,9 +52,18 @@ interface VueReportPayload {
     flaky: number;
     duration: string;
     passRate: number;
+    flakyRate: number;
     failRate: number;
     skipRate: number;
     timedOut: number;
+    avgDuration: string;
+    nonPassing: number;
+  };
+  highlights: {
+    browsers: number;
+    suites: number;
+    retriedTests: number;
+    historyPoints: number;
   };
   insights: {
     qualityScore: number;
@@ -68,6 +77,7 @@ interface VueReportPayload {
     p95: string;
     effectivePassRate: number;
     riskLevel: 'Low' | 'Moderate' | 'High' | 'Critical';
+    releaseGate: 'READY' | 'RISKY' | 'BLOCKED';
   };
   charts: {
     status: { labels: string[]; series: number[]; colors: string[] };
@@ -150,12 +160,57 @@ interface VueReportPayload {
   hasFailures: boolean;
 }
 
-const THEME_PALETTES: Record<VueReportTheme, { bg: string; card: string; text: string; muted: string; border: string; accent: string }> = {
-  dark:       { bg: '#0f172a', card: '#1e293b', text: '#e2e8f0', muted: '#94a3b8', border: '#334155', accent: '#3b82f6' },
-  light:      { bg: '#f8fafc', card: '#ffffff', text: '#0f172a', muted: '#64748b', border: '#e2e8f0', accent: '#2563eb' },
-  professional: { bg: '#f1f5f9', card: '#ffffff', text: '#0f172a', muted: '#475569', border: '#cbd5e1', accent: '#0ea5e9' },
-  neon:        { bg: '#0a0e27', card: '#1a1f3a', text: '#e0e7ff', muted: '#00d4ff', border: '#00ff88', accent: '#00ff88' },
-  ocean:       { bg: '#0c4a6e', card: '#0e7490', text: '#e0f2fe', muted: '#7dd3fc', border: '#06b6d4', accent: '#22d3ee' }
+const THEME_PALETTES: Record<VueReportTheme, { bg: string; card: string; text: string; muted: string; border: string; accent: string; accent2: string }> = {
+  dark: {
+    // Executive Slate
+    bg: '#111827',
+    card: '#1f2937',
+    text: '#f3f4f6',
+    muted: '#9ca3af',
+    border: '#374151',
+    accent: '#3b82f6',
+    accent2: '#14b8a6'
+  },
+  light: {
+    // Boardroom Light
+    bg: '#f8fafc',
+    card: '#ffffff',
+    text: '#1f2937',
+    muted: '#6b7280',
+    border: '#d1d5db',
+    accent: '#2563eb',
+    accent2: '#0d9488'
+  },
+  professional: {
+    // Enterprise Clean (default)
+    bg: '#f3f6fb',
+    card: '#ffffff',
+    text: '#0f172a',
+    muted: '#475569',
+    border: '#cbd5e1',
+    accent: '#1d4ed8',
+    accent2: '#0f766e'
+  },
+  neon: {
+    // Executive Carbon
+    bg: '#0f172a',
+    card: '#1e293b',
+    text: '#e2e8f0',
+    muted: '#94a3b8',
+    border: '#334155',
+    accent: '#0ea5e9',
+    accent2: '#22c55e'
+  },
+  ocean: {
+    // Coastal Corporate
+    bg: '#eaf2f7',
+    card: '#f8fbff',
+    text: '#102a43',
+    muted: '#486581',
+    border: '#bcccdc',
+    accent: '#1d4ed8',
+    accent2: '#0f766e'
+  }
 };
 
 function enhanceStats(stats: Statistics, data: ReportData) {
@@ -186,17 +241,25 @@ function shortLabel(s: string, max = 26): string {
 }
 
 export async function generateVueReport(data: ReportData, options: VueReportOptions): Promise<string> {
-  const title = options.title || 'Playwright Test Report';
-  const theme = (options.theme || 'dark') as VueReportTheme;
+  const title = options.title || 'Playwright Fire Reports';
+  const theme = (options.theme || 'professional') as VueReportTheme;
+
+  const inputTests = data?.tests ?? [];
+  const canonicalTotal = inputTests.length;
+  const canonicalPassed = inputTests.filter(t => t.status === 'passed').length;
+  const canonicalFailed = inputTests.filter(t => t.status === 'failed').length;
+  const canonicalSkipped = inputTests.filter(t => t.status === 'skipped').length;
+  const canonicalFlaky = inputTests.filter(t => (t.retries || 0) > 0 && t.status === 'passed').length;
+  const canonicalDuration = inputTests.reduce((acc, t) => acc + Math.max(0, t.duration || 0), 0);
 
   const safeData: ReportData = {
-    totalTests: data?.totalTests ?? 0,
-    passed: data?.passed ?? 0,
-    failed: data?.failed ?? 0,
-    skipped: data?.skipped ?? 0,
-    flaky: data?.flaky ?? 0,
-    totalDuration: data?.totalDuration ?? 0,
-    tests: data?.tests ?? [],
+    totalTests: canonicalTotal,
+    passed: canonicalPassed,
+    failed: canonicalFailed,
+    skipped: canonicalSkipped,
+    flaky: canonicalFlaky,
+    totalDuration: canonicalDuration,
+    tests: inputTests,
     suites: data?.suites ?? [],
     browsers: data?.browsers ?? [],
     browserStats: data?.browserStats ?? [],
@@ -283,6 +346,7 @@ export async function generateVueReport(data: ReportData, options: VueReportOpti
   const totalRetries = data.tests.reduce((acc, t) => acc + Math.max(0, t.retries || 0), 0);
   const retriedTests = data.tests.filter(t => (t.retries || 0) > 0).length;
   const retryRate = data.totalTests > 0 ? Math.round((retriedTests / data.totalTests) * 100) : 0;
+  const flakyRate = data.totalTests > 0 ? Math.round((data.flaky / data.totalTests) * 100) : 0;
   const retryHealth = clamp(100 - retryRate);
   const speedScore = clamp(100 - Math.round((p95 / 15000) * 100));
   const stabilityScore = clamp(Math.round(100 - (retryRate * 0.55 + enhanced.failRate * 0.75 + (timedOut / Math.max(1, data.totalTests)) * 100 * 0.4)));
@@ -429,6 +493,14 @@ export async function generateVueReport(data: ReportData, options: VueReportOpti
     flakyRateDelta: latestRun && previousRun ? latestRun.flakyRate - previousRun.flakyRate : 0,
     durationDeltaSec: latestRun && previousRun ? Math.round((latestRun.durationMs - previousRun.durationMs) / 1000) : 0
   };
+  const avgDurationMs = data.totalTests > 0 ? Math.round(data.totalDuration / data.totalTests) : 0;
+  const nonPassing = data.failed + timedOut;
+  const releaseGate: VueReportPayload['insights']['releaseGate'] =
+    (data.failed > 0 || timedOut > 0)
+      ? 'BLOCKED'
+      : ((flakyRate >= 8) || (comparison.hasBaseline && comparison.durationDeltaSec > 20))
+        ? 'RISKY'
+        : 'READY';
 
   const payload: VueReportPayload = {
     title,
@@ -449,9 +521,18 @@ export async function generateVueReport(data: ReportData, options: VueReportOpti
       flaky: data.flaky,
       duration: formatDuration(data.totalDuration),
       passRate: enhanced.passRate,
+      flakyRate,
       failRate: enhanced.failRate,
       skipRate: enhanced.skipRate,
-      timedOut
+      timedOut,
+      avgDuration: formatDuration(avgDurationMs),
+      nonPassing
+    },
+    highlights: {
+      browsers: browserStats.length,
+      suites: suiteStats.length,
+      retriedTests,
+      historyPoints: history.length
     },
     insights: {
       qualityScore,
@@ -464,7 +545,8 @@ export async function generateVueReport(data: ReportData, options: VueReportOpti
       p90: formatDuration(p90),
       p95: formatDuration(p95),
       effectivePassRate,
-      riskLevel
+      riskLevel,
+      releaseGate
     },
     charts: {
       status: {
@@ -540,7 +622,7 @@ function buildVueReportHtml(payload: VueReportPayload): string {
   const themeKeys: VueReportTheme[] = ['dark', 'light', 'professional', 'neon', 'ocean'];
   const themeCss = themeKeys.map(t => {
     const p = THEME_PALETTES[t];
-    return `html[data-report-theme="${t}"] { --report-bg: ${p.bg}; --report-card: ${p.card}; --report-text: ${p.text}; --report-muted: ${p.muted}; --report-border: ${p.border}; --report-accent: ${p.accent}; }`;
+    return `html[data-report-theme="${t}"] { --report-bg: ${p.bg}; --report-card: ${p.card}; --report-text: ${p.text}; --report-muted: ${p.muted}; --report-border: ${p.border}; --report-accent: ${p.accent}; --report-accent-2: ${p.accent2}; }`;
   }).join('\n    ');
 
   const reportJson = JSON.stringify(payload).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
@@ -553,23 +635,32 @@ function buildVueReportHtml(payload: VueReportPayload): string {
   <title>${escapeHtml(payload.title)} – Test Report</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <style>
     body {
       font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
       background:
-        radial-gradient(1200px 500px at 10% -10%, color-mix(in srgb, var(--report-accent) 22%, transparent), transparent 70%),
-        radial-gradient(900px 400px at 100% 0%, color-mix(in srgb, var(--report-accent) 14%, transparent), transparent 70%),
-        var(--report-bg);
+        radial-gradient(1100px 520px at 8% -8%, color-mix(in srgb, var(--report-accent) 24%, transparent), transparent 68%),
+        radial-gradient(1000px 560px at 96% 0%, color-mix(in srgb, var(--report-accent-2) 18%, transparent), transparent 70%),
+        linear-gradient(180deg, color-mix(in srgb, var(--report-bg) 96%, #000 4%), var(--report-bg));
       color: var(--report-text);
       min-height: 100vh;
     }
     .report-root { background: var(--report-bg); color: var(--report-text); }
     .report-card {
-      background: color-mix(in srgb, var(--report-card) 94%, transparent);
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--report-card) 98%, #fff 2%), color-mix(in srgb, var(--report-card) 94%, transparent));
       border-color: color-mix(in srgb, var(--report-border) 86%, transparent);
       backdrop-filter: blur(4px);
+      box-shadow: 0 8px 24px color-mix(in srgb, var(--report-accent) 8%, transparent);
+      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    }
+    .report-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 16px 30px color-mix(in srgb, var(--report-accent) 14%, transparent);
+      border-color: color-mix(in srgb, var(--report-accent) 28%, var(--report-border));
     }
     .report-muted { color: var(--report-muted); }
     .report-border { border-color: var(--report-border); }
@@ -582,14 +673,28 @@ function buildVueReportHtml(payload: VueReportPayload): string {
     .detail-panel { position: fixed; top: 0; right: 0; width: 100%; max-width: 480px; height: 100%; z-index: 50; overflow-y: auto; box-shadow: -4px 0 20px rgba(0,0,0,0.2); }
     .hero-panel {
       background:
-        linear-gradient(135deg, color-mix(in srgb, var(--report-accent) 20%, transparent), transparent 45%),
-        color-mix(in srgb, var(--report-card) 95%, transparent);
-      border: 1px solid color-mix(in srgb, var(--report-accent) 24%, var(--report-border));
+        radial-gradient(80% 120% at 5% 0%, color-mix(in srgb, var(--report-accent) 28%, transparent), transparent 70%),
+        radial-gradient(80% 120% at 95% 0%, color-mix(in srgb, var(--report-accent-2) 22%, transparent), transparent 70%),
+        color-mix(in srgb, var(--report-card) 96%, transparent);
+      border: 1px solid color-mix(in srgb, var(--report-accent) 32%, var(--report-border));
+      box-shadow: 0 14px 36px color-mix(in srgb, var(--report-accent) 12%, transparent);
     }
     .metric-pill {
       border: 1px solid color-mix(in srgb, var(--report-accent) 35%, var(--report-border));
-      background: color-mix(in srgb, var(--report-accent) 12%, transparent);
+      background: linear-gradient(135deg, color-mix(in srgb, var(--report-accent) 16%, transparent), color-mix(in srgb, var(--report-accent-2) 12%, transparent));
     }
+    .hero-kpi {
+      border: 1px solid color-mix(in srgb, var(--report-accent) 28%, var(--report-border));
+      background: color-mix(in srgb, var(--report-card) 84%, transparent);
+    }
+    .action-btn {
+      border: 1px solid color-mix(in srgb, var(--report-accent) 34%, var(--report-border));
+      background: linear-gradient(135deg, color-mix(in srgb, var(--report-accent) 18%, transparent), color-mix(in srgb, var(--report-accent-2) 14%, transparent));
+      color: var(--report-text);
+    }
+    .action-btn:hover { filter: brightness(1.04); transform: translateY(-1px); }
+    body.exporting-pdf .no-print { display: none !important; }
+    body.exporting-pdf .report-card { transform: none !important; }
     .score-orb {
       width: 104px;
       height: 104px;
@@ -609,6 +714,19 @@ function buildVueReportHtml(payload: VueReportPayload): string {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }
     }
+    html[data-report-theme="light"] .report-card,
+    html[data-report-theme="professional"] .report-card {
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
+    }
+    html[data-report-theme="neon"] .hero-panel,
+    html[data-report-theme="ocean"] .hero-panel {
+      box-shadow: 0 16px 36px color-mix(in srgb, var(--report-accent) 24%, transparent);
+    }
+    @media print {
+      .no-print { display: none !important; }
+      body { background: #fff !important; color: #111 !important; }
+      .report-card { box-shadow: none !important; backdrop-filter: none !important; }
+    }
     ${themeCss}
   </style>
 </head>
@@ -616,27 +734,8 @@ function buildVueReportHtml(payload: VueReportPayload): string {
   <div id="app" class="report-root" v-cloak>
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <!-- Header -->
-    <header class="mb-8 flex flex-wrap items-start justify-between gap-4 fade-up">
-      <div>
-        <h1 class="text-3xl font-bold tracking-tight">${escapeHtml(payload.title)}</h1>
-        <p class="text-sm mt-1 report-muted">Generated {{ new Date(payload.generatedAt).toLocaleString() }}</p>
-        <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
-          <span v-if="payload.metadata.environment" class="metric-pill px-2 py-1 rounded-full">Env: {{ payload.metadata.environment }}</span>
-          <span v-if="payload.metadata.branch" class="metric-pill px-2 py-1 rounded-full">Branch: {{ payload.metadata.branch }}</span>
-          <span v-if="payload.metadata.commit" class="metric-pill px-2 py-1 rounded-full">Commit: {{ payload.metadata.commit.slice(0, 8) }}</span>
-          <span v-if="payload.metadata.pullRequest" class="metric-pill px-2 py-1 rounded-full">PR: {{ payload.metadata.pullRequest }}</span>
-          <a v-if="payload.metadata.buildUrl" :href="payload.metadata.buildUrl" target="_blank" rel="noopener noreferrer"
-             class="metric-pill px-2 py-1 rounded-full underline decoration-dotted">Build Link</a>
-        </div>
-        <div class="mt-3 flex items-center gap-3 flex-wrap">
-          <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium"
-            :class="payload.summary.failed > 0 ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'">
-            {{ payload.summary.failed > 0 ? '❌ Failures' : '✅ All passed' }}
-          </span>
-          <span class="text-sm report-muted">{{ payload.summary.total }} tests · {{ payload.summary.duration }}</span>
-        </div>
-      </div>
-      <div class="hero-panel rounded-2xl p-4 sm:p-5 w-full lg:w-auto min-w-[320px]">
+    <header class="mb-8 flex flex-wrap lg:flex-nowrap items-start justify-between gap-4 fade-up">
+      <div class="hero-panel rounded-2xl p-4 sm:p-5 w-full lg:w-[380px] lg:shrink-0">
         <div class="flex items-center justify-between gap-4">
           <div>
             <p class="text-xs uppercase tracking-widest report-muted">Execution Health</p>
@@ -653,12 +752,82 @@ function buildVueReportHtml(payload: VueReportPayload): string {
         <div class="mt-4 flex items-center justify-between gap-2">
           <span class="text-xs report-muted">Theme</span>
           <select v-model="selectedTheme" class="px-3 py-1.5 rounded-lg border text-xs bg-[var(--report-card)] report-border report-muted focus:ring-2 focus:ring-[var(--report-accent)]">
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-            <option value="professional">Professional</option>
-            <option value="neon">Neon</option>
-            <option value="ocean">Ocean</option>
+            <option value="professional">Enterprise Clean</option>
+            <option value="light">Boardroom Light</option>
+            <option value="dark">Executive Slate</option>
+            <option value="neon">Executive Carbon</option>
+            <option value="ocean">Coastal Corporate</option>
           </select>
+        </div>
+        <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+          <div class="hero-kpi rounded-xl px-4 py-3 border-l-4 border-l-emerald-500 bg-emerald-500/10">
+            <div class="report-muted text-xs">Passed</div>
+            <div class="text-xl font-bold text-emerald-400">{{ payload.summary.passed }}</div>
+          </div>
+          <div class="hero-kpi rounded-xl px-4 py-3 border-l-4 border-l-red-500 bg-red-500/10">
+            <div class="report-muted text-xs">Failed</div>
+            <div class="text-xl font-bold text-red-400">{{ payload.summary.failed }}</div>
+          </div>
+          <div class="hero-kpi rounded-xl px-4 py-3 border-l-4 border-l-blue-500 bg-blue-500/10">
+            <div class="report-muted text-xs">Pass Rate</div>
+            <div class="text-xl font-bold text-blue-400">{{ payload.summary.passRate }}%</div>
+          </div>
+          <div class="hero-kpi rounded-xl px-4 py-3 border-l-4 border-l-amber-500 bg-amber-500/10">
+            <div class="report-muted text-xs">Non-Passing</div>
+            <div class="text-xl font-bold text-amber-400">{{ payload.summary.nonPassing }}</div>
+          </div>
+          <div class="hero-kpi rounded-xl px-4 py-3 border-l-4 border-l-violet-500 bg-violet-500/10">
+            <div class="report-muted text-xs">Avg/Test</div>
+            <div class="text-xl font-bold text-violet-400">{{ payload.summary.avgDuration }}</div>
+          </div>
+          <div class="hero-kpi rounded-xl px-4 py-3 border-l-4 border-l-cyan-500 bg-cyan-500/10">
+            <div class="report-muted text-xs">Coverage</div>
+            <div class="text-lg font-bold text-cyan-300">{{ payload.highlights.browsers }} browsers · {{ payload.highlights.suites }} suites</div>
+          </div>
+        </div>
+      </div>
+      <div class="flex-1 min-w-[320px]">
+        <h1 class="text-3xl font-bold tracking-tight">${escapeHtml(payload.title)}</h1>
+        <p class="text-sm mt-1 report-muted">Generated {{ new Date(payload.generatedAt).toLocaleString() }}</p>
+        <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <span v-if="payload.metadata.environment" class="metric-pill px-2 py-1 rounded-full">Env: {{ payload.metadata.environment }}</span>
+          <span v-if="payload.metadata.branch" class="metric-pill px-2 py-1 rounded-full">Branch: {{ payload.metadata.branch }}</span>
+          <span v-if="payload.metadata.commit" class="metric-pill px-2 py-1 rounded-full">Commit: {{ payload.metadata.commit.slice(0, 8) }}</span>
+          <span v-if="payload.metadata.pullRequest" class="metric-pill px-2 py-1 rounded-full">PR: {{ payload.metadata.pullRequest }}</span>
+          <a v-if="payload.metadata.buildUrl" :href="payload.metadata.buildUrl" target="_blank" rel="noopener noreferrer"
+             class="metric-pill px-2 py-1 rounded-full underline decoration-dotted">Build Link</a>
+        </div>
+        <div class="mt-4 rounded-xl border p-4 report-card">
+          <div class="flex items-center justify-between gap-3">
+            <div class="text-xs uppercase tracking-wider report-muted">Release Gate</div>
+            <span class="px-3 py-1 rounded-full text-xs font-semibold"
+              :class="payload.insights.releaseGate === 'READY' ? 'bg-emerald-500/20 text-emerald-400' : payload.insights.releaseGate === 'RISKY' ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'">
+              {{ payload.insights.releaseGate }}
+            </span>
+          </div>
+          <div class="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+            <div class="hero-kpi rounded-lg px-3 py-2 border-l-4 border-l-red-500 bg-red-500/10">
+              <div class="report-muted text-xs">Failed tests</div>
+              <div class="font-bold text-red-400 text-lg">{{ payload.summary.failed }}</div>
+            </div>
+            <div class="hero-kpi rounded-lg px-3 py-2 border-l-4 border-l-violet-500 bg-violet-500/10">
+              <div class="report-muted text-xs">Flaky rate</div>
+              <div class="font-bold text-violet-400 text-lg">{{ payload.summary.flakyRate }}%</div>
+            </div>
+            <div class="hero-kpi rounded-lg px-3 py-2 border-l-4 border-l-cyan-500 bg-cyan-500/10">
+              <div class="report-muted text-xs">Duration vs previous run</div>
+              <div v-if="payload.comparison.hasBaseline" class="font-bold text-lg"
+                :class="payload.comparison.durationDeltaSec <= 0 ? 'text-emerald-400' : 'text-amber-400'">
+                {{ payload.comparison.durationDeltaSec > 0 ? '+' : '' }}{{ payload.comparison.durationDeltaSec }}s
+              </div>
+              <div v-else class="font-semibold text-slate-400 text-sm">N/A</div>
+            </div>
+          </div>
+        </div>
+        <div class="mt-3 flex flex-wrap items-center gap-2 no-print">
+          <button type="button" @click.prevent.stop="downloadPdf" class="action-btn px-3 py-1.5 rounded-lg text-xs font-medium transition">Download PDF</button>
+          <button type="button" @click.prevent.stop="shareByEmail" class="action-btn px-3 py-1.5 rounded-lg text-xs font-medium transition">Share Email</button>
+          <button type="button" @click.prevent.stop="shareToSlack" class="action-btn px-3 py-1.5 rounded-lg text-xs font-medium transition">Share Slack</button>
         </div>
       </div>
     </header>
@@ -682,7 +851,7 @@ function buildVueReportHtml(payload: VueReportPayload): string {
       </div>
       <div class="rounded-xl p-4 border shadow-sm report-card">
         <div class="text-2xl font-bold text-violet-500">{{ payload.summary.flaky }}</div>
-        <div class="text-sm report-muted">Flaky</div>
+        <div class="text-sm report-muted">Flaky (subset)</div>
       </div>
       <div class="rounded-xl p-4 border shadow-sm report-card">
         <div class="text-2xl font-bold text-cyan-500">{{ payload.summary.timedOut }}</div>
@@ -1067,9 +1236,6 @@ function buildVueReportHtml(payload: VueReportPayload): string {
       </div>
     </div>
 
-    <footer class="mt-12 pt-6 border-t text-center text-sm report-border report-muted">
-      Playwright Custom Reports · Vue.js dashboard
-    </footer>
   </div>
 
   <!-- Test detail panel (steps like Playwright HTML report) -->
@@ -1111,14 +1277,14 @@ function buildVueReportHtml(payload: VueReportPayload): string {
     (function(){ var p = window.__REPORT_PAYLOAD__; if (p && p.theme) document.documentElement.setAttribute('data-report-theme', p.theme); })();
   </script>
   <script>
-    const { createApp, ref, computed, watch, onMounted, nextTick } = Vue;
+    const { createApp, ref, computed, watch, onMounted, onBeforeUnmount, nextTick } = Vue;
 
     createApp({
       setup() {
         const payload = window.__REPORT_PAYLOAD__;
         const params = new URLSearchParams(window.location.search);
         const tab = ref(params.get('tab') || 'overview');
-        const selectedTheme = ref(params.get('theme') || payload.theme || 'dark');
+        const selectedTheme = ref(params.get('theme') || payload.theme || 'professional');
         const expandedStack = ref(null);
         const searchQuery = ref(params.get('q') || '');
         const filterStatus = ref(params.get('status') || '');
@@ -1182,189 +1348,185 @@ function buildVueReportHtml(payload: VueReportPayload): string {
         }
 
         function renderCharts() {
-          chartInstances.forEach(function(c) { try { c.destroy(); } catch (e) {} });
+          chartInstances.forEach(function(c) { try { c.dispose(); } catch (e) {} });
           chartInstances.length = 0;
+
           var textColor = getComputedStyle(document.body).getPropertyValue('--report-muted').trim() || '#94a3b8';
           var axisColor = getComputedStyle(document.body).getPropertyValue('--report-border').trim() || '#334155';
-          var opts = { chart: { fontFamily: 'Plus Jakarta Sans' }, legend: { labels: { colors: textColor } }, noData: { text: 'No data', style: { color: textColor } }, grid: { borderColor: axisColor } };
+          var cardColor = getComputedStyle(document.body).getPropertyValue('--report-card').trim() || '#0f172a';
           var el = function(id) { return document.querySelector(id); };
-          if (el('#chart-duration')) {
-            var c1 = new ApexCharts(el('#chart-duration'), {
-              series: [{ name: 'Tests', data: payload.charts.duration.series }],
-              chart: { type: 'bar', height: 256, toolbar: { show: false } },
-              plotOptions: { bar: { horizontal: true, borderRadius: 4, distributed: true } },
-              colors: payload.charts.duration.colors,
-              xaxis: { categories: payload.charts.duration.labels },
-              ...opts
-            });
-            c1.render();
-            chartInstances.push(c1);
+
+          function mountChart(id, option) {
+            var node = el(id);
+            if (!node || !window.echarts) return null;
+            var chart = window.echarts.init(node, null, { renderer: 'canvas' });
+            chart.setOption(option, true);
+            chartInstances.push(chart);
+            return chart;
           }
-          if (el('#chart-retries') && payload.charts.retries.series.length) {
-            var c2 = new ApexCharts(el('#chart-retries'), {
-              series: [{ name: 'Tests', data: payload.charts.retries.series }],
-              chart: { type: 'bar', height: 256, toolbar: { show: false } },
-              plotOptions: { bar: { borderRadius: 4 } },
-              xaxis: { categories: payload.charts.retries.labels },
-              colors: ['#60a5fa'],
-              ...opts
-            });
-            c2.render();
-            chartInstances.push(c2);
-          }
-          if (el('#chart-tiers')) {
-            try {
-              var c3 = new ApexCharts(el('#chart-tiers'), {
-                series: payload.charts.tiers.series,
-                chart: { type: 'donut', height: 256 },
-                colors: payload.charts.tiers.colors,
-                labels: payload.charts.tiers.labels,
-                legend: { position: 'bottom', labels: { colors: textColor } },
-                noData: { text: 'No data', style: { color: textColor } },
-                dataLabels: { enabled: true },
-                stroke: { width: 1 },
-                tooltip: { y: { formatter: function(v) { return v + ' tests'; } } }
-              });
-              c3.render();
-              chartInstances.push(c3);
-            } catch (e) {
-              var c3b = new ApexCharts(el('#chart-tiers'), {
-                series: [{ name: 'Tests', data: payload.charts.tiers.series }],
-                chart: { type: 'bar', height: 256, toolbar: { show: false } },
-                plotOptions: { bar: { horizontal: true, borderRadius: 4, distributed: true } },
-                colors: payload.charts.tiers.colors,
-                xaxis: { categories: payload.charts.tiers.labels },
-                ...opts
-              });
-              c3b.render();
-              chartInstances.push(c3b);
+
+          function makePieData(labels, series, colors) {
+            var items = labels.map(function(label, idx) {
+              return { name: label, value: Number(series[idx] || 0), itemStyle: { color: colors[idx % colors.length] } };
+            }).filter(function(item) { return item.value > 0; });
+            if (items.length === 0) {
+              return [{ name: 'No data', value: 1, itemStyle: { color: axisColor, opacity: 0.4 }, label: { color: textColor } }];
             }
+            return items;
           }
-          if (el('#chart-quality')) {
-            var c4 = new ApexCharts(el('#chart-quality'), {
-              series: [{ name: 'Score', data: payload.charts.quality.series }],
-              chart: { type: 'radar', height: 256, toolbar: { show: false } },
-              xaxis: { categories: payload.charts.quality.labels, labels: { style: { colors: payload.charts.quality.labels.map(function() { return textColor; }) } } },
-              yaxis: { min: 0, max: 100, tickAmount: 4, labels: { style: { colors: [textColor] } } },
-              fill: { opacity: 0.24 },
-              stroke: { width: 2 },
-              markers: { size: 4 },
-              colors: ['#22c55e'],
-              ...opts
+
+          mountChart('#chart-duration', {
+            color: payload.charts.duration.colors,
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            grid: { left: 110, right: 24, top: 20, bottom: 24, containLabel: true },
+            xAxis: { type: 'value', axisLine: { lineStyle: { color: axisColor } }, splitLine: { lineStyle: { color: axisColor, opacity: 0.35 } }, axisLabel: { color: textColor } },
+            yAxis: { type: 'category', data: payload.charts.duration.labels, axisLine: { lineStyle: { color: axisColor } }, axisLabel: { color: textColor, width: 90, overflow: 'truncate' } },
+            series: [{
+              name: 'Tests',
+              type: 'bar',
+              data: payload.charts.duration.series,
+              itemStyle: { borderRadius: [0, 6, 6, 0] },
+              barMaxWidth: 18
+            }]
+          });
+
+          if (payload.charts.retries.series.length) {
+            mountChart('#chart-retries', {
+              color: ['#60a5fa'],
+              tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+              grid: { left: 44, right: 18, top: 20, bottom: 24, containLabel: true },
+              xAxis: { type: 'category', data: payload.charts.retries.labels, axisLine: { lineStyle: { color: axisColor } }, axisLabel: { color: textColor } },
+              yAxis: { type: 'value', axisLine: { lineStyle: { color: axisColor } }, splitLine: { lineStyle: { color: axisColor, opacity: 0.35 } }, axisLabel: { color: textColor } },
+              series: [{ name: 'Tests', type: 'bar', data: payload.charts.retries.series, itemStyle: { borderRadius: [6, 6, 0, 0] }, barMaxWidth: 26 }]
             });
-            c4.render();
-            chartInstances.push(c4);
           }
-          if (el('#chart-file-risk')) {
-            var c5 = new ApexCharts(el('#chart-file-risk'), {
-              series: [{ name: 'Risk Score', data: payload.charts.fileRisk.series }],
-              chart: { type: 'bar', height: 256, toolbar: { show: false } },
-              plotOptions: { bar: { horizontal: true, borderRadius: 4, distributed: true } },
-              colors: payload.charts.fileRisk.colors,
-              xaxis: { categories: payload.charts.fileRisk.labels, max: 100 },
-              ...opts
+
+          mountChart('#chart-tiers', {
+            tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+            legend: { bottom: 0, textStyle: { color: textColor } },
+            series: [{
+              name: 'Performance tier',
+              type: 'pie',
+              radius: ['45%', '74%'],
+              center: ['50%', '44%'],
+              avoidLabelOverlap: true,
+              label: { color: textColor },
+              labelLine: { lineStyle: { color: axisColor } },
+              data: makePieData(payload.charts.tiers.labels, payload.charts.tiers.series, payload.charts.tiers.colors)
+            }]
+          });
+
+          mountChart('#chart-quality', {
+            radar: {
+              indicator: payload.charts.quality.labels.map(function(label) { return { name: label, max: 100 }; }),
+              axisName: { color: textColor },
+              axisLine: { lineStyle: { color: axisColor } },
+              splitLine: { lineStyle: { color: axisColor, opacity: 0.5 } },
+              splitArea: { areaStyle: { color: ['transparent'] } }
+            },
+            tooltip: {},
+            series: [{
+              name: 'Quality',
+              type: 'radar',
+              data: [{ value: payload.charts.quality.series, name: 'Score' }],
+              areaStyle: { opacity: 0.25, color: '#22c55e' },
+              lineStyle: { color: '#22c55e', width: 2 },
+              itemStyle: { color: '#22c55e' }
+            }]
+          });
+
+          mountChart('#chart-file-risk', {
+            color: payload.charts.fileRisk.colors,
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            grid: { left: 120, right: 18, top: 20, bottom: 24, containLabel: true },
+            xAxis: { type: 'value', max: 100, axisLine: { lineStyle: { color: axisColor } }, splitLine: { lineStyle: { color: axisColor, opacity: 0.35 } }, axisLabel: { color: textColor } },
+            yAxis: { type: 'category', data: payload.charts.fileRisk.labels, axisLine: { lineStyle: { color: axisColor } }, axisLabel: { color: textColor, width: 100, overflow: 'truncate' } },
+            series: [{
+              name: 'Risk Score',
+              type: 'bar',
+              data: payload.charts.fileRisk.series,
+              itemStyle: { borderRadius: [0, 6, 6, 0] },
+              barMaxWidth: 18
+            }]
+          });
+
+          mountChart('#chart-duration-top', {
+            color: ['#f97316'],
+            tooltip: { trigger: 'axis' },
+            grid: { left: 44, right: 18, top: 24, bottom: 24, containLabel: true },
+            xAxis: { type: 'category', data: payload.charts.durationTop.labels, axisLabel: { show: false, color: textColor }, axisLine: { lineStyle: { color: axisColor } } },
+            yAxis: { type: 'value', axisLine: { lineStyle: { color: axisColor } }, splitLine: { lineStyle: { color: axisColor, opacity: 0.35 } }, axisLabel: { color: textColor } },
+            series: [{
+              name: 'Seconds',
+              type: 'line',
+              smooth: true,
+              symbolSize: 7,
+              data: payload.charts.durationTop.series,
+              areaStyle: {
+                color: new window.echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                  { offset: 0, color: 'rgba(249,115,22,0.45)' },
+                  { offset: 1, color: 'rgba(249,115,22,0.06)' }
+                ])
+              },
+              lineStyle: { width: 3 }
+            }]
+          });
+
+          if (payload.charts.browserMatrix.labels.length > 0) {
+            mountChart('#chart-browser-matrix', {
+              tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+              legend: { bottom: 0, textStyle: { color: textColor } },
+              series: [{
+                name: 'Browser share',
+                type: 'pie',
+                radius: ['45%', '74%'],
+                center: ['50%', '44%'],
+                label: { color: textColor },
+                labelLine: { lineStyle: { color: axisColor } },
+                data: makePieData(payload.charts.browserMatrix.labels, payload.charts.browserMatrix.series, payload.charts.browserMatrix.colors)
+              }]
             });
-            c5.render();
-            chartInstances.push(c5);
           }
-          if (el('#chart-duration-top')) {
-            var c6 = new ApexCharts(el('#chart-duration-top'), {
-              series: [{ name: 'Seconds', data: payload.charts.durationTop.series }],
-              chart: { type: 'area', height: 256, toolbar: { show: false } },
-              dataLabels: { enabled: false },
-              stroke: { curve: 'smooth', width: 3 },
-              fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.55, opacityTo: 0.1 } },
-              markers: { size: 3 },
-              xaxis: { categories: payload.charts.durationTop.labels, labels: { show: false } },
-              yaxis: { labels: { style: { colors: [textColor] } } },
-              tooltip: { x: { show: true } },
-              colors: ['#f97316'],
-              ...opts
+
+          if (payload.charts.suiteShare.labels.length > 0) {
+            mountChart('#chart-suite-share', {
+              tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+              legend: { bottom: 0, textStyle: { color: textColor } },
+              series: [{
+                name: 'Suite share',
+                type: 'pie',
+                radius: ['45%', '74%'],
+                center: ['50%', '44%'],
+                label: { color: textColor },
+                labelLine: { lineStyle: { color: axisColor } },
+                data: makePieData(payload.charts.suiteShare.labels, payload.charts.suiteShare.series, payload.charts.suiteShare.colors)
+              }]
             });
-            c6.render();
-            chartInstances.push(c6);
           }
-          if (el('#chart-browser-matrix') && payload.charts.browserMatrix.labels.length > 0) {
-            try {
-              var c7 = new ApexCharts(el('#chart-browser-matrix'), {
-                series: payload.charts.browserMatrix.series,
-                chart: { type: 'donut', height: 256 },
-                labels: payload.charts.browserMatrix.labels,
-                colors: payload.charts.browserMatrix.colors,
-                legend: { position: 'bottom', labels: { colors: textColor } },
-                noData: { text: 'No data', style: { color: textColor } },
-                dataLabels: { enabled: true },
-                stroke: { width: 1 },
-                tooltip: { y: { formatter: function(v) { return v + ' tests'; } } }
-              });
-              c7.render();
-              chartInstances.push(c7);
-            } catch (e) {
-              var c7b = new ApexCharts(el('#chart-browser-matrix'), {
-                series: [{ name: 'Tests', data: payload.charts.browserMatrix.series }],
-                chart: { type: 'bar', height: 256, toolbar: { show: false } },
-                plotOptions: { bar: { horizontal: true, borderRadius: 4, distributed: true } },
-                colors: payload.charts.browserMatrix.colors,
-                xaxis: { categories: payload.charts.browserMatrix.labels },
-                ...opts
-              });
-              c7b.render();
-              chartInstances.push(c7b);
-            }
-          }
-          if (el('#chart-suite-share') && payload.charts.suiteShare.labels.length > 0) {
-            try {
-              var c9 = new ApexCharts(el('#chart-suite-share'), {
-                series: payload.charts.suiteShare.series,
-                chart: { type: 'donut', height: 256 },
-                labels: payload.charts.suiteShare.labels,
-                colors: payload.charts.suiteShare.colors,
-                legend: { position: 'bottom', labels: { colors: textColor } },
-                noData: { text: 'No data', style: { color: textColor } },
-                dataLabels: { enabled: true },
-                stroke: { width: 1 },
-                tooltip: { y: { formatter: function(v) { return v + ' tests'; } } }
-              });
-              c9.render();
-              chartInstances.push(c9);
-            } catch (e) {
-              var c9b = new ApexCharts(el('#chart-suite-share'), {
-                series: [{ name: 'Tests', data: payload.charts.suiteShare.series }],
-                chart: { type: 'bar', height: 256, toolbar: { show: false } },
-                plotOptions: { bar: { horizontal: true, borderRadius: 4, distributed: true } },
-                colors: payload.charts.suiteShare.colors,
-                xaxis: { categories: payload.charts.suiteShare.labels },
-                ...opts
-              });
-              c9b.render();
-              chartInstances.push(c9b);
-            }
-          }
-          if (el('#chart-run-trends') && payload.charts.runTrends.labels.length > 1) {
-            var c8 = new ApexCharts(el('#chart-run-trends'), {
+
+          if (payload.charts.runTrends.labels.length > 1) {
+            mountChart('#chart-run-trends', {
+              color: ['#22c55e', '#ef4444', '#8b5cf6', '#06b6d4'],
+              tooltip: { trigger: 'axis' },
+              legend: { top: 0, textStyle: { color: textColor } },
+              grid: { left: 44, right: 44, top: 42, bottom: 28, containLabel: true },
+              xAxis: { type: 'category', data: payload.charts.runTrends.labels, axisLabel: { show: false, color: textColor }, axisLine: { lineStyle: { color: axisColor } } },
+              yAxis: [
+                { type: 'value', min: 0, max: 100, name: '%', axisLabel: { color: textColor }, splitLine: { lineStyle: { color: axisColor, opacity: 0.35 } } },
+                { type: 'value', name: 'Seconds', axisLabel: { color: textColor }, splitLine: { show: false } }
+              ],
               series: [
-                { name: 'Pass %', data: payload.charts.runTrends.passRate },
-                { name: 'Fail %', data: payload.charts.runTrends.failRate },
-                { name: 'Flaky %', data: payload.charts.runTrends.flakyRate },
-                { name: 'Duration (s)', data: payload.charts.runTrends.durationSec }
-              ],
-              chart: { type: 'line', height: 288, toolbar: { show: false } },
-              stroke: { width: [3, 2, 2, 2], curve: 'smooth' },
-              markers: { size: 3 },
-              dataLabels: { enabled: false },
-              colors: ['#22c55e', '#ef4444', '#8b5cf6', '#06b6d4'],
-              xaxis: { categories: payload.charts.runTrends.labels, labels: { show: false } },
-              yaxis: [
-                { max: 100, title: { text: '%' }, labels: { style: { colors: [textColor] } } },
-                { opposite: true, title: { text: 'Seconds' }, labels: { style: { colors: [textColor] } } }
-              ],
-              legend: { position: 'top' },
-              tooltip: { shared: true },
-              ...opts
+                { name: 'Pass %', type: 'line', smooth: true, data: payload.charts.runTrends.passRate, symbolSize: 6 },
+                { name: 'Fail %', type: 'line', smooth: true, data: payload.charts.runTrends.failRate, symbolSize: 6 },
+                { name: 'Flaky %', type: 'line', smooth: true, data: payload.charts.runTrends.flakyRate, symbolSize: 6 },
+                { name: 'Duration (s)', type: 'line', smooth: true, yAxisIndex: 1, data: payload.charts.runTrends.durationSec, symbolSize: 6 }
+              ]
             });
-            c8.render();
-            chartInstances.push(c8);
           }
+        }
+
+        function handleResize() {
+          chartInstances.forEach(function(c) { try { c.resize(); } catch (e) {} });
         }
 
         function openTest(t) {
@@ -1383,6 +1545,109 @@ function buildVueReportHtml(payload: VueReportPayload): string {
         function copyError(msg, stack) {
           var text = [msg || '', stack || ''].filter(Boolean).join('\\n\\n--- Stack ---\\n');
           navigator.clipboard.writeText(text).then(function() { alert('Copied to clipboard'); }).catch(function() {});
+        }
+
+        function buildShareSummary() {
+          return [
+            payload.title,
+            '',
+            'Total: ' + payload.summary.total,
+            'Passed: ' + payload.summary.passed,
+            'Failed: ' + payload.summary.failed,
+            'Skipped: ' + payload.summary.skipped,
+            'Timed out: ' + payload.summary.timedOut,
+            'Pass rate: ' + payload.summary.passRate + '%',
+            'Duration: ' + payload.summary.duration,
+            'Risk: ' + payload.insights.riskLevel,
+            'Generated: ' + new Date(payload.generatedAt).toLocaleString(),
+            '',
+            'Report: ' + window.location.href
+          ].join('\\n');
+        }
+
+        async function downloadPdf(ev) {
+          if (ev && ev.preventDefault) ev.preventDefault();
+          if (ev && ev.stopPropagation) ev.stopPropagation();
+          var node = document.querySelector('.max-w-7xl');
+          if (!node || !window.html2pdf) {
+            window.print();
+            return;
+          }
+
+          // Freeze chart animations and force resize before capture.
+          chartInstances.forEach(function(c) {
+            try {
+              c.resize();
+              c.setOption({ animation: false });
+            } catch (e) {}
+          });
+
+          document.body.classList.add('exporting-pdf');
+          await new Promise(function(resolve) { setTimeout(resolve, 180); });
+
+          try {
+            var filename = (payload.title || 'playwright-fire-reports')
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/(^-|-$)/g, '') + '.pdf';
+            var opt = {
+              margin: [6, 6, 6, 6],
+              filename: filename,
+              image: { type: 'jpeg', quality: 0.98 },
+              html2canvas: {
+                scale: 2,
+                useCORS: true,
+                allowTaint: true,
+                backgroundColor: null,
+                logging: false
+              },
+              jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+              pagebreak: { mode: ['css', 'legacy'] }
+            };
+            await window.html2pdf().set(opt).from(node).save();
+          } catch (e) {
+            window.print();
+          } finally {
+            document.body.classList.remove('exporting-pdf');
+            chartInstances.forEach(function(c) {
+              try { c.setOption({ animation: true }); } catch (e) {}
+            });
+          }
+        }
+
+        function shareByEmail(ev) {
+          if (ev && ev.preventDefault) ev.preventDefault();
+          if (ev && ev.stopPropagation) ev.stopPropagation();
+          var subject = payload.title + ' - Test Report';
+          var body = buildShareSummary();
+          window.location.href = 'mailto:?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+        }
+
+        async function shareToSlack(ev) {
+          if (ev && ev.preventDefault) ev.preventDefault();
+          if (ev && ev.stopPropagation) ev.stopPropagation();
+          var storageKey = 'fire_report_slack_webhook';
+          var previous = localStorage.getItem(storageKey) || '';
+          var webhook = window.prompt('Enter Slack Incoming Webhook URL to share this report:', previous || '');
+          if (!webhook) return;
+          localStorage.setItem(storageKey, webhook);
+          var text = buildShareSummary();
+          try {
+            var res = await fetch(webhook, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: text })
+            });
+            if (!res.ok) throw new Error('Slack webhook returned ' + res.status);
+            alert('Report shared to Slack.');
+          } catch (e) {
+            try {
+              await navigator.clipboard.writeText(text);
+              alert('Could not post directly to Slack from browser. Summary copied to clipboard.');
+            } catch (_) {
+              alert('Could not post directly to Slack from browser.');
+            }
+          }
         }
 
         function applyTheme(theme) {
@@ -1415,7 +1680,15 @@ function buildVueReportHtml(payload: VueReportPayload): string {
             setTimeout(renderCharts, 100);
           });
           window.addEventListener('keydown', onKeydown);
+          window.addEventListener('resize', handleResize);
           syncUrlState();
+        });
+
+        onBeforeUnmount(function() {
+          window.removeEventListener('keydown', onKeydown);
+          window.removeEventListener('resize', handleResize);
+          chartInstances.forEach(function(c) { try { c.dispose(); } catch (e) {} });
+          chartInstances.length = 0;
         });
 
         watch(selectedTheme, function(v) {
@@ -1431,7 +1704,7 @@ function buildVueReportHtml(payload: VueReportPayload): string {
         watch(filterBrowser, function() { syncUrlState(); });
         watch(filterSuite, function() { syncUrlState(); });
 
-        return { payload, tab, selectedTheme, expandedStack, searchQuery, filterStatus, filterBrowser, filterSuite, browserOptions, suiteOptions, selectedTest, filteredAllTests, hasChartData, switchTab, openTest, closeTest, toggleStack, copyError };
+        return { payload, tab, selectedTheme, expandedStack, searchQuery, filterStatus, filterBrowser, filterSuite, browserOptions, suiteOptions, selectedTest, filteredAllTests, hasChartData, switchTab, openTest, closeTest, toggleStack, copyError, downloadPdf, shareByEmail, shareToSlack };
       }
     }).mount('#app');
   </script>

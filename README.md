@@ -4,6 +4,24 @@ HTML reports for Playwright test results with charts, themes, test steps, and fa
 
 ---
 
+## Report Preview
+
+Add your screenshots under `docs/images/` using the filenames below.
+
+### Dashboard header
+![Dashboard Header](docs/images/dashboard-header.png)
+
+### Browser and suite analytics
+![Browser and Suite Analytics](docs/images/browser-suite-analytics.png)
+
+### All tests view with filters
+![All Tests View](docs/images/all-tests-view.png)
+
+### Performance insights
+![Performance Insights](docs/images/performance-insights.png)
+
+---
+
 ## How to generate a report
 
 Follow these three steps every time you want a report.
@@ -67,7 +85,7 @@ open report.html
 
 ## Optional: change theme or title
 
-- **Theme** (default is `dark`): use `--theme light`, `--theme professional`, `--theme neon`, or `--theme ocean`.
+- **Theme** (default is `professional`): use `--theme light`, `--theme professional`, `--theme dark`, `--theme neon`, or `--theme ocean`.
 - **Title**: use `--title "My Report"`.
 
 Example:
