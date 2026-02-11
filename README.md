@@ -105,16 +105,16 @@ await createReport('test-results.json', 'report.html', {
 
 ## Report Preview
 
-These preview images are stored in `docs/images/`. Replace them with your latest screenshots any time.
+These preview images are stored in `Images/`.
 
 ### Dashboard header
-![Dashboard Header](docs/images/dashboard-header.svg)
+![Dashboard Header](Images/firereport-1.png)
 
 ### Browser and suite analytics
-![Browser and Suite Analytics](docs/images/browser-suite-analytics.svg)
+![Browser and Suite Analytics](Images/firereport-2.png)
 
 ### All tests view with filters
-![All Tests View](docs/images/all-tests-view.svg)
+![All Tests View](Images/firereporrt-3.png)
 
 ### Performance insights
-![Performance Insights](docs/images/performance-insights.svg)
+![Performance Insights](Images/firereport-4.png)
